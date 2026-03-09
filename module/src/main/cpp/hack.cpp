@@ -5,6 +5,15 @@
 #include "il2cpp_dump.h"
 #include "log.h"
 #include "xdl.h"
+
+// ────────────────────────────────────────────────────────────────────────────────
+// INCLUDES OBLIGATOIRES POUR LES FONCTIONS IL2CPP (corrige les "undeclared" et types inconnus)
+#include "il2cpp-api-functions.h"   // Contient il2cpp_domain_get, il2cpp_domain_assembly_open, etc.
+#include "il2cpp-class.h"           // Contient Il2CppClass, Il2CppMethod, Il2CppImage, etc.
+#include "il2cpp-class-internals.h" // Si besoin pour Il2CppException / internals (souvent inclus)
+
+// ────────────────────────────────────────────────────────────────────────────────
+// AUTRES INCLUDES STANDARDS
 #include <cstring>
 #include <cstdio>
 #include <unistd.h>
@@ -17,17 +26,16 @@
 #include <array>
 
 // ────────────────────────────────────────────────────────────────────────────────
-// PARTIE PHOTON KICK TCO (corrigée pour armeabi-v7a 32 bits)
+// PARTIE PHOTON KICK TCO (corrigée)
 // ────────────────────────────────────────────────────────────────────────────────
 
-// On évite de redéfinir LOG_TAG (conflit avec log.h)
-// On utilise un tag dédié + appel direct à __android_log_print
+// Tag dédié pour éviter conflit avec log.h
 #define TCO_LOG_TAG "TCO_KICK"
 #define TCO_LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, TCO_LOG_TAG, __VA_ARGS__)
 
 // RVA exacts issus de ton dump.cs
-const uintptr_t RVA_SET_MASTER_CLIENT = 0x1947664;   // SetMasterClient(PhotonPlayer masterClientPlayer)
-const uintptr_t RVA_CLOSE_CONNECTION   = 0x194765C;   // CloseConnection(PhotonPlayer kickPlayer)
+const uintptr_t RVA_SET_MASTER_CLIENT = 0x1947664;
+const uintptr_t RVA_CLOSE_CONNECTION   = 0x194765C;
 
 // Fonction pour tenter de devenir Master
 bool SetMasterClient(void* localPlayer) {
@@ -71,7 +79,7 @@ bool CloseConnection(void* targetPlayer) {
     return success;
 }
 
-// Fonction de test / exécution du kick
+// Fonction principale de test / exécution du kick
 void TryPhotonKick() {
     TCO_LOGD("Photon Kick test démarré ! RVA SetMaster: 0x%x, Close: 0x%x",
              (unsigned int)RVA_SET_MASTER_CLIENT,
@@ -136,9 +144,8 @@ void TryPhotonKick() {
     bool becameMaster = SetMasterClient(localPlayer);
     TCO_LOGD("Devenu Master ? %s", becameMaster ? "OUI" : "NON");
 
-    // Pour le kick : simulation simple (pas de cible réelle pour l'instant)
-    // Dans la prochaine version on ajoutera la recherche par UserId
-    TCO_LOGD("Simulation kick terminée (pas de cible réelle pour ce test)");
+    // Simulation kick (pas de cible réelle pour ce test)
+    TCO_LOGD("Simulation kick terminée (pas de cible réelle pour l'instant)");
 
     xdl_close(libil2cpp);
 }
@@ -171,7 +178,7 @@ void hack_start(const char *game_data_dir) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────────
-// LE RESTE DU FICHIER RESTE INCHANGÉ (code original)
+// LE RESTE DU FICHIER RESTE INCHANGÉ
 // ────────────────────────────────────────────────────────────────────────────────
 
 std::string GetLibDir(JavaVM *vms) {
