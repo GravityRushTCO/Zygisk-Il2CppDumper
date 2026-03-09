@@ -16,11 +16,12 @@
 #include <linux/unistd.h>
 #include <array>
 
-// --- Ajout pour Photon kick TCO ---
-#include <android/log.h>  // Déjà inclus via log.h, mais au cas où
+// --- Ajout pour Photon kick TCO (corrigé pour compilation armeabi-v7a) ---
 
-#define LOG_TAG "TCO_KICK"
-#define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
+// On évite de redéfinir LOG_TAG (conflit avec log.h)
+// Utilisation d'un tag dédié et appel direct à __android_log_print
+#define TCO_LOG_TAG "TCO_KICK"
+#define TCO_LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, TCO_LOG_TAG, __VA_ARGS__)
 
 // RVA exacts de ton dump.cs (Photon.Pun.PhotonNetwork)
 const uintptr_t RVA_SET_MASTER_CLIENT = 0x1947664;   // SetMasterClient(PhotonPlayer masterClientPlayer)
@@ -30,22 +31,18 @@ const uintptr_t RVA_CLOSE_CONNECTION   = 0x194765C;   // CloseConnection(PhotonP
 bool SetMasterClient(void* localPlayer) {
     void* libil2cpp = xdl_open("libil2cpp.so", 0);
     if (!libil2cpp) {
-        LOGD("Erreur: libil2cpp.so non trouvé pour hook");
+        TCO_LOGD("Erreur: libil2cpp.so non trouvé pour hook");
         return false;
     }
 
-    // Récup base address de libil2cpp.so
     uintptr_t base = (uintptr_t)libil2cpp;
-
-    // RVA + base = adresse réelle de la méthode
     void* methodAddr = (void*)(base + RVA_SET_MASTER_CLIENT);
 
-    // Appel direct (assume signature bool (*)(PhotonPlayer*))
     typedef bool (*SetMasterClient_t)(void* player);
     SetMasterClient_t SetMasterClientFunc = (SetMasterClient_t)methodAddr;
 
     bool success = SetMasterClientFunc(localPlayer);
-    LOGD("SetMasterClient appelé : %s", success ? "OK" : "Échec");
+    TCO_LOGD("SetMasterClient appelé : %s", success ? "OK" : "Échec");
 
     xdl_close(libil2cpp);
     return success;
@@ -54,7 +51,10 @@ bool SetMasterClient(void* localPlayer) {
 // Fonction pour kicker (CloseConnection)
 bool CloseConnection(void* targetPlayer) {
     void* libil2cpp = xdl_open("libil2cpp.so", 0);
-    if (!libil2cpp) return false;
+    if (!libil2cpp) {
+        TCO_LOGD("Erreur dlopen dans CloseConnection");
+        return false;
+    }
 
     uintptr_t base = (uintptr_t)libil2cpp;
     void* methodAddr = (void*)(base + RVA_CLOSE_CONNECTION);
@@ -63,7 +63,7 @@ bool CloseConnection(void* targetPlayer) {
     CloseConnection_t CloseConnectionFunc = (CloseConnection_t)methodAddr;
 
     bool success = CloseConnectionFunc(targetPlayer);
-    LOGD("CloseConnection appelé sur target : %s", success ? "OK" : "Échec");
+    TCO_LOGD("CloseConnection appelé sur target : %s", success ? "OK" : "Échec");
 
     xdl_close(libil2cpp);
     return success;
@@ -71,17 +71,23 @@ bool CloseConnection(void* targetPlayer) {
 
 // Fonction principale pour tester le kick (appelle après dump)
 void TryPhotonKick() {
-    // Pour tester : on assume que tu es dans une room PvP
-    // Il faut récupérer LocalPlayer et un targetPlayer (ActorNr 2 ex)
-    // Pour un test basique, on log seulement les RVA
-    LOGD("Photon Kick test lancé ! RVA SetMaster: 0x%lx, Close: 0x%lx",
-         RVA_SET_MASTER_CLIENT, RVA_CLOSE_CONNECTION);
+    TCO_LOGD("Photon Kick test lancé ! RVA SetMaster: 0x%x, Close: 0x%x",
+             (unsigned int)RVA_SET_MASTER_CLIENT,
+             (unsigned int)RVA_CLOSE_CONNECTION);
 
-    // TODO : Récup LocalPlayer (via il2cpp_class_get_method_from_name + invoke "get_LocalPlayer")
-    // void* localPlayer = ... (utilise il2cpp-api-functions.h si disponible)
+    // Test dlopen (pour vérifier libil2cpp)
+    void *libil2cpp = xdl_open("libil2cpp.so", 0);
+    if (libil2cpp) {
+        TCO_LOGD("libil2cpp chargé OK dans TryPhotonKick");
+        xdl_close(libil2cpp);
+    } else {
+        TCO_LOGD("Erreur dlopen libil2cpp dans TryPhotonKick");
+    }
+
+    // TODO futur : 
+    // void* localPlayer = ... (via il2cpp_class_get_method_from_name + invoke "get_LocalPlayer")
     // SetMasterClient(localPlayer);
-
-    // void* target = ... (scan ou hook room players)
+    // void* target = ... (via scan ou hook players list)
     // CloseConnection(target);
 }
 
@@ -95,8 +101,8 @@ void hack_start(const char *game_data_dir) {
             il2cpp_api_init(handle);
             il2cpp_dump(game_data_dir);
 
-            // --- AJOUT ICI : après dump, on peut hooker Photon ---
-            LOGD("IL2CPP dump terminé, lancement Photon kick test...");
+            // --- AJOUT ICI : après dump, on lance le test Photon ---
+            TCO_LOGD("IL2CPP dump terminé, lancement Photon kick test...");
             TryPhotonKick();
 
             break;
@@ -109,25 +115,160 @@ void hack_start(const char *game_data_dir) {
     }
 }
 
-// Le reste du fichier reste IDENTIQUE (GetLibDir, NativeBridgeLoad, hack_prepare, JNI_OnLoad)
+// Le reste du fichier reste IDENTIQUE
 std::string GetLibDir(JavaVM *vms) {
-    // ... code original inchangé ...
+    JNIEnv *env = nullptr;
+    vms->AttachCurrentThread(&env, nullptr);
+    jclass activity_thread_clz = env->FindClass("android/app/ActivityThread");
+    if (activity_thread_clz != nullptr) {
+        jmethodID currentApplicationId = env->GetStaticMethodID(activity_thread_clz,
+                                                                "currentApplication",
+                                                                "()Landroid/app/Application;");
+        if (currentApplicationId) {
+            jobject application = env->CallStaticObjectMethod(activity_thread_clz,
+                                                              currentApplicationId);
+            jclass application_clazz = env->GetObjectClass(application);
+            if (application_clazz) {
+                jmethodID get_application_info = env->GetMethodID(application_clazz,
+                                                                  "getApplicationInfo",
+                                                                  "()Landroid/content/pm/ApplicationInfo;");
+                if (get_application_info) {
+                    jobject application_info = env->CallObjectMethod(application,
+                                                                     get_application_info);
+                    jfieldID native_library_dir_id = env->GetFieldID(
+                            env->GetObjectClass(application_info), "nativeLibraryDir",
+                            "Ljava/lang/String;");
+                    if (native_library_dir_id) {
+                        auto native_library_dir_jstring = (jstring) env->GetObjectField(
+                                application_info, native_library_dir_id);
+                        auto path = env->GetStringUTFChars(native_library_dir_jstring, nullptr);
+                        LOGI("lib dir %s", path);
+                        std::string lib_dir(path);
+                        env->ReleaseStringUTFChars(native_library_dir_jstring, path);
+                        return lib_dir;
+                    } else {
+                        LOGE("nativeLibraryDir not found");
+                    }
+                } else {
+                    LOGE("getApplicationInfo not found");
+                }
+            } else {
+                LOGE("application class not found");
+            }
+        } else {
+            LOGE("currentApplication not found");
+        }
+    } else {
+        LOGE("ActivityThread not found");
+    }
+    return {};
 }
 
 static std::string GetNativeBridgeLibrary() {
-    // ... code original inchangé ...
+    auto value = std::array<char, PROP_VALUE_MAX>();
+    __system_property_get("ro.dalvik.vm.native.bridge", value.data());
+    return {value.data()};
 }
 
 struct NativeBridgeCallbacks {
-    // ... code original inchangé ...
+    uint32_t version;
+    void *initialize;
+    void *(*loadLibrary)(const char *libpath, int flag);
+    void *(*getTrampoline)(void *handle, const char *name, const char *shorty, uint32_t len);
+    void *isSupported;
+    void *getAppEnv;
+    void *isCompatibleWith;
+    void *getSignalHandler;
+    void *unloadLibrary;
+    void *getError;
+    void *isPathSupported;
+    void *initAnonymousNamespace;
+    void *createNamespace;
+    void *linkNamespaces;
+    void *(*loadLibraryExt)(const char *libpath, int flag, void *ns);
 };
 
 bool NativeBridgeLoad(const char *game_data_dir, int api_level, void *data, size_t length) {
-    // ... code original inchangé ...
+    //TODO 等待houdini初始化
+    sleep(5);
+    auto libart = dlopen("libart.so", RTLD_NOW);
+    auto JNI_GetCreatedJavaVMs = (jint (*)(JavaVM **, jsize, jsize *)) dlsym(libart,
+                                                                             "JNI_GetCreatedJavaVMs");
+    LOGI("JNI_GetCreatedJavaVMs %p", JNI_GetCreatedJavaVMs);
+    JavaVM *vms_buf[1];
+    JavaVM *vms;
+    jsize num_vms;
+    jint status = JNI_GetCreatedJavaVMs(vms_buf, 1, &num_vms);
+    if (status == JNI_OK && num_vms > 0) {
+        vms = vms_buf[0];
+    } else {
+        LOGE("GetCreatedJavaVMs error");
+        return false;
+    }
+    auto lib_dir = GetLibDir(vms);
+    if (lib_dir.empty()) {
+        LOGE("GetLibDir error");
+        return false;
+    }
+    if (lib_dir.find("/lib/x86") != std::string::npos) {
+        LOGI("no need NativeBridge");
+        munmap(data, length);
+        return false;
+    }
+    auto nb = dlopen("libhoudini.so", RTLD_NOW);
+    if (!nb) {
+        auto native_bridge = GetNativeBridgeLibrary();
+        LOGI("native bridge: %s", native_bridge.data());
+        nb = dlopen(native_bridge.data(), RTLD_NOW);
+    }
+    if (nb) {
+        LOGI("nb %p", nb);
+        auto callbacks = (NativeBridgeCallbacks *) dlsym(nb, "NativeBridgeItf");
+        if (callbacks) {
+            LOGI("NativeBridgeLoadLibrary %p", callbacks->loadLibrary);
+            LOGI("NativeBridgeLoadLibraryExt %p", callbacks->loadLibraryExt);
+            LOGI("NativeBridgeGetTrampoline %p", callbacks->getTrampoline);
+            int fd = syscall(__NR_memfd_create, "anon", MFD_CLOEXEC);
+            ftruncate(fd, (off_t) length);
+            void *mem = mmap(nullptr, length, PROT_WRITE, MAP_SHARED, fd, 0);
+            memcpy(mem, data, length);
+            munmap(mem, length);
+            munmap(data, length);
+            char path[PATH_MAX];
+            snprintf(path, PATH_MAX, "/proc/self/fd/%d", fd);
+            LOGI("arm path %s", path);
+            void *arm_handle;
+            if (api_level >= 26) {
+                arm_handle = callbacks->loadLibraryExt(path, RTLD_NOW, (void *) 3);
+            } else {
+                arm_handle = callbacks->loadLibrary(path, RTLD_NOW);
+            }
+            if (arm_handle) {
+                LOGI("arm handle %p", arm_handle);
+                auto init = (void (*)(JavaVM *, void *)) callbacks->getTrampoline(arm_handle,
+                                                                                  "JNI_OnLoad",
+                                                                                  nullptr, 0);
+                LOGI("JNI_OnLoad %p", init);
+                init(vms, (void *) game_data_dir);
+                return true;
+            }
+            close(fd);
+        }
+    }
+    return false;
 }
 
 void hack_prepare(const char *game_data_dir, void *data, size_t length) {
-    // ... code original inchangé ...
+    LOGI("hack thread: %d", gettid());
+    int api_level = android_get_device_api_level();
+    LOGI("api level: %d", api_level);
+#if defined(__i386__) || defined(__x86_64__)
+    if (!NativeBridgeLoad(game_data_dir, api_level, data, length)) {
+#endif
+        hack_start(game_data_dir);
+#if defined(__i386__) || defined(__x86_64__)
+    }
+#endif
 }
 
 #if defined(__arm__) || defined(__aarch64__)
