@@ -1,7 +1,3 @@
-//
-// hack.cpp – Version SAFE pour tests avec ami consentant (compile arm64-v8a)
-// Kick uniquement si conditions réunies (room + LocalPlayer OK)
-//
 #include "hack.h"
 #include "il2cpp_dump.h"
 #include "log.h"
@@ -70,8 +66,8 @@ KLOG("CloseConnection addr : 0x%lx", addrClose);
 // Pointeurs de fonction
 typedef bool (SetMaster_t)(void);
 typedef bool (Close_t)(void);
-SetMaster_t setFunc = (SetMaster_t)addrSet;
-Close_t closeFunc = (Close_t)addrClose;
+SetMaster_t setFunc = reinterpret_cast<SetMaster_t>(addrSet);
+Close_t closeFunc = reinterpret_cast<Close_t>(addrClose);
 KLOG("Pointeurs de fonction prêts");
 // Test appels sur pointeur fictif pour éviter crash immédiat
 void* fakePlayer = (void*)0xDEADBEEF;
@@ -148,9 +144,9 @@ LOGE("ActivityThread not found");
 return {};
 }
 static std::string GetNativeBridgeLibrary() {
-char value[92];  // Taille fixe pour éviter PROP_VALUE_MAX (erreur compilation)
-__system_property_get("ro.dalvik.vm.native.bridge", value);
-return {value};
+auto value = std::array<char, PROP_VALUE_MAX>();
+__system_property_get("ro.dalvik.vm.native.bridge", value.data());
+return {value.data()};
 }
 struct NativeBridgeCallbacks {
 uint32_t version;
