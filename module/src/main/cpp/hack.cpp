@@ -20,15 +20,15 @@
 // PARTIE PHOTON KICK TCO – VERSION SÛRE ET COMPILABLE
 // ────────────────────────────────────────────────────────────────────────────────
 
-// Tag dédié pour éviter conflit avec log.h
+// Tag DÉDIÉ pour éviter tout conflit avec log.h
 #define TCO_LOG_TAG "TCO_KICK"
 #define TCO_LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, TCO_LOG_TAG, __VA_ARGS__)
 
-// RVA exacts issus de ton dump.cs
+// RVA exacts issus de ton dump.cs (Photon.Pun.PhotonNetwork)
 const uintptr_t RVA_SET_MASTER_CLIENT = 0x1947664;
-const uintptr_t RVA_CLOSE_CONNECTION   = 0x194765C;
+const uintptr_t RVA_CLOSE_CONNECTION  = 0x194765C;
 
-// Fonction pour tenter de devenir Master (appel direct RVA)
+// Fonction pour tenter de devenir Master (appel direct via RVA)
 bool SetMasterClient(void* localPlayer) {
     void* libil2cpp = xdl_open("libil2cpp.so", 0);
     if (!libil2cpp) {
@@ -49,7 +49,7 @@ bool SetMasterClient(void* localPlayer) {
     return success;
 }
 
-// Fonction pour kicker un joueur (appel direct RVA)
+// Fonction pour kicker un joueur (appel direct via RVA)
 bool CloseConnection(void* targetPlayer) {
     void* libil2cpp = xdl_open("libil2cpp.so", 0);
     if (!libil2cpp) {
@@ -70,10 +70,10 @@ bool CloseConnection(void* targetPlayer) {
     return success;
 }
 
-// Fonction de test / exécution du kick (logs détaillés)
+// Fonction de test / exécution du kick (logs détaillés + appels commentés)
 void TryPhotonKick() {
     TCO_LOGD("=== Début Photon Kick test ===");
-    TCO_LOGD("RVA SetMasterClient: 0x%x", (unsigned int)RVA_SET_MASTER_CLIENT);
+    TCO_LOGD("RVA SetMasterClient : 0x%x", (unsigned int)RVA_SET_MASTER_CLIENT);
     TCO_LOGD("RVA CloseConnection  : 0x%x", (unsigned int)RVA_CLOSE_CONNECTION);
 
     void* libil2cpp = nullptr;
@@ -97,17 +97,33 @@ void TryPhotonKick() {
 
     uintptr_t addrSetMaster = base + RVA_SET_MASTER_CLIENT;
     uintptr_t addrCloseConn = base + RVA_CLOSE_CONNECTION;
-    TCO_LOGD("Adresse SetMasterClient  : 0x%x", (unsigned int)addrSetMaster);
+
+    TCO_LOGD("Adresse SetMasterClient : 0x%x", (unsigned int)addrSetMaster);
     TCO_LOGD("Adresse CloseConnection  : 0x%x", (unsigned int)addrCloseConn);
 
-    // Pointeurs de fonction préparés (non appelés pour éviter crash si signature fausse)
+    // Pointeurs de fonction préparés (non appelés pour l'instant – décommente plus tard)
     typedef bool (*SetMasterClient_t)(void* player);
     typedef bool (*CloseConnection_t)(void* player);
 
     SetMasterClient_t setMasterFunc = (SetMasterClient_t)addrSetMaster;
-    CloseConnection_t closeFunc     = (CloseConnection_t)addrCloseConn;
+    CloseConnection_t closeFunc = (CloseConnection_t)addrCloseConn;
 
     TCO_LOGD("Pointeurs de fonction prêts (non appelés pour sécurité)");
+
+    // ────────────────────────────────────────────────
+    // À décommenter quand on aura LocalPlayer et target valides
+    // ────────────────────────────────────────────────
+    /*
+    void* fakeLocalPlayer = nullptr;   // À remplacer par vrai pointeur
+    void* fakeTargetPlayer = nullptr;  // À remplacer par vrai joueur cible
+
+    bool setSuccess = setMasterFunc(fakeLocalPlayer);
+    TCO_LOGD("SetMasterClient appelé → %s", setSuccess ? "OK" : "Échec");
+
+    bool closeSuccess = closeFunc(fakeTargetPlayer);
+    TCO_LOGD("CloseConnection appelé → %s", closeSuccess ? "OK" : "Échec");
+    */
+
     TCO_LOGD("=== Fin Photon Kick test ===");
 
     xdl_close(libil2cpp);
@@ -116,7 +132,6 @@ void TryPhotonKick() {
 // ────────────────────────────────────────────────────────────────────────────────
 // hack_start – appelle le test après le dump
 // ────────────────────────────────────────────────────────────────────────────────
-
 void hack_start(const char *game_data_dir) {
     bool load = false;
     for (int i = 0; i < 10; i++) {
@@ -140,7 +155,7 @@ void hack_start(const char *game_data_dir) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────────
-// LE RESTE DU FICHIER EST INCHANGÉ (code original)
+// LE RESTE DU FICHIER EST INCHANGÉ (code original Perfare)
 // ────────────────────────────────────────────────────────────────────────────────
 
 std::string GetLibDir(JavaVM *vms) {
