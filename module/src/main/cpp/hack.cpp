@@ -13,10 +13,10 @@
 #include <linux/unistd.h>
 #include <array>
 // ──────────────────────────────────────────────────────────────
-// TAG TRÈS VISIBLE ET FACILE À FILTRER
+// LOG TRÈS VISIBLE ET FACILE À FILTRER
 // ──────────────────────────────────────────────────────────────
 #define KICK_TAG "KICK_TEST_SAFE"
-#define KLOG(fmt, args...) __android_log_print(ANDROID_LOG_ERROR, KICK_TAG, fmt, ##args)
+#define KLOG(...) __android_log_print(ANDROID_LOG_ERROR, KICK_TAG, VA_ARGS)
 // RVA exacts de ton dump.cs (Photon.Pun.PhotonNetwork)
 const uintptr_t RVA_SET_MASTER = 0x1947664;
 const uintptr_t RVA_CLOSE_CONN = 0x194765C;
