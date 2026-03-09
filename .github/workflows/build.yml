@@ -16,6 +16,13 @@ jobs:
         distribution: temurin
         java-version: 11
         cache: gradle
+        - name: Cache NDK
+  uses: actions/cache@v4
+  with:
+    path: |
+      /usr/local/lib/android/sdk/ndk/
+    key: ${{ runner.os }}-ndk-${{ hashFiles('module/build.gradle') }}
+    restore-keys: ${{ runner.os }}-ndk-
     - run: |
         chmod +x ./gradlew
         sed -i 's/moduleDescription = "/moduleDescription = "(${{ github.event.inputs.package_name }}) /g' module.gradle
@@ -26,3 +33,4 @@ jobs:
       with:
         name: zygisk-il2cppdumper
         path: out/magisk_module_release/
+       
