@@ -1,5 +1,5 @@
 //
-// hack.cpp – Version SAFE pour tests avec ami consentant
+// hack.cpp – Version SAFE pour tests avec ami consentant (compile arm64-v8a)
 // Kick uniquement si conditions réunies (room + LocalPlayer OK)
 //
 
@@ -23,7 +23,7 @@
 #define KICK_TAG "KICK_TEST_SAFE"
 #define KLOG(...) __android_log_print(ANDROID_LOG_ERROR, KICK_TAG, __VA_ARGS__)
 
-// RVA exacts de ton dump.cs
+// RVA exacts de ton dump.cs (Photon.Pun.PhotonNetwork)
 const uintptr_t RVA_SET_MASTER = 0x1947664;
 const uintptr_t RVA_CLOSE_CONN = 0x194765C;
 
@@ -40,7 +40,7 @@ static const char* lib_names[] = {
 };
 
 // ──────────────────────────────────────────────────────────────
-// Recherche lib + test kick safe
+// Recherche lib + test kick safe (sans crash)
 // ──────────────────────────────────────────────────────────────
 
 void SafeKickTest(const char* game_data_dir) {
@@ -49,7 +49,7 @@ void SafeKickTest(const char* game_data_dir) {
     void* handle = NULL;
     const char** name = lib_names;
 
-    // Recherche agressive
+    // Recherche agressive de la lib
     while (*name) {
         handle = xdl_open(*name, RTLD_NOW | RTLD_GLOBAL);
         if (handle) {
@@ -79,14 +79,16 @@ void SafeKickTest(const char* game_data_dir) {
     KLOG("SetMasterClient addr : 0x%lx", addrSet);
     KLOG("CloseConnection addr : 0x%lx", addrClose);
 
-    // Test appels (pointeur fictif pour éviter crash immédiat)
+    // Pointeurs de fonction
     typedef bool (*SetMaster_t)(void*);
     typedef bool (*Close_t)(void*);
 
     SetMaster_t setFunc = (SetMaster_t)addrSet;
     Close_t closeFunc = (Close_t)addrClose;
 
-    // Pointeur fictif pour test (remplace plus tard par vrai LocalPlayer)
+    KLOG("Pointeurs de fonction prêts");
+
+    // Test appels sur pointeur fictif (safe, pour voir si l'adresse est valide)
     void* fakePlayer = (void*)0xDEADBEEF;
 
     KLOG("Test SetMasterClient sur fake player...");
@@ -97,9 +99,12 @@ void SafeKickTest(const char* game_data_dir) {
     bool closeOk = closeFunc(fakePlayer);
     KLOG("CloseConnection → %s", closeOk ? "OK" : "Échec (normal avec fake)");
 
-    // Si tu veux tenter un vrai LocalPlayer plus tard :
-    // void* localPlayer = ... (via il2cpp ou offset)
-    // if (localPlayer) setFunc(localPlayer);
+    // Si tu veux tenter un vrai appel plus tard (décommente quand prêt) :
+    // void* localPlayer = ... (récupération via offset ou API)
+    // if (localPlayer) {
+    //     setFunc(localPlayer);
+    //     // Puis kick un ami (par pointeur valide)
+    // }
 
     KLOG("Test kick terminé – vérifie si le jeu crash ou si ton ami voit quelque chose");
     xdl_close(handle);
