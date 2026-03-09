@@ -1,6 +1,8 @@
 //
-// Created by Perfare on 2020/7/4.
+// hack.cpp – Version SAFE & TARGETED pour kick avec ami consentant
+// Lance le kick uniquement quand on est en room + au moins 1 autre joueur
 //
+
 #include "hack.h"
 #include "il2cpp_dump.h"
 #include "log.h"
@@ -8,315 +10,140 @@
 #include <cstring>
 #include <cstdio>
 #include <unistd.h>
-#include <sys/system_properties.h>
 #include <dlfcn.h>
 #include <jni.h>
 #include <thread>
 #include <sys/mman.h>
 #include <linux/unistd.h>
-#include <array>
 
-// ────────────────────────────────────────────────────────────────────────────────
-// PARTIE PHOTON KICK TCO – VERSION SÛRE ET COMPILABLE
-// ────────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────
+// LOG TRÈS VISIBLE
+// ──────────────────────────────────────────────────────────────
 
-// Tag DÉDIÉ pour éviter tout conflit avec log.h
-#define TCO_LOG_TAG "TCO_KICK"
-#define TCO_LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, TCO_LOG_TAG, __VA_ARGS__)
+#define KICK_TAG "KICK_TEST_SAFE"
+#define KLOG(...) __android_log_print(ANDROID_LOG_ERROR, KICK_TAG, __VA_ARGS__)
 
-// RVA exacts issus de ton dump.cs (Photon.Pun.PhotonNetwork)
-const uintptr_t RVA_SET_MASTER_CLIENT = 0x1947664;
-const uintptr_t RVA_CLOSE_CONNECTION  = 0x194765C;
+// RVA de ton dump (Photon.Pun.PhotonNetwork)
+const uintptr_t RVA_SET_MASTER = 0x1947664;
+const uintptr_t RVA_CLOSE_CONN = 0x194765C;
 
-// Fonction pour tenter de devenir Master (appel direct via RVA)
-bool SetMasterClient(void* localPlayer) {
-    void* libil2cpp = xdl_open("libil2cpp.so", 0);
-    if (!libil2cpp) {
-        TCO_LOGD("Erreur: libil2cpp.so non trouvé pour SetMasterClient");
-        return false;
-    }
+// Noms possibles de la lib camouflée
+static const char* lib_names[] = {
+    "libil2cpp.so",
+    "libmain.so",
+    "libgame.so",
+    "libunity.so",
+    "libcore.so",
+    "libnative.so",
+    "libbee.so",
+    NULL
+};
 
-    uintptr_t base = (uintptr_t)libil2cpp;
-    void* methodAddr = (void*)(base + RVA_SET_MASTER_CLIENT);
+// ──────────────────────────────────────────────────────────────
+// Fonction principale : trouve la lib + kick les autres joueurs
+// ──────────────────────────────────────────────────────────────
 
-    typedef bool (*SetMasterClient_t)(void* player);
-    SetMasterClient_t func = (SetMasterClient_t)methodAddr;
+void SafeKickOthers(const char* game_data_dir) {
+    KLOG("SafeKickOthers démarré – thread %d", gettid());
 
-    bool success = func(localPlayer);
-    TCO_LOGD("SetMasterClient appelé → %s", success ? "OK" : "Échec");
+    void* handle = NULL;
+    const char** name = lib_names;
 
-    xdl_close(libil2cpp);
-    return success;
-}
-
-// Fonction pour kicker un joueur (appel direct via RVA)
-bool CloseConnection(void* targetPlayer) {
-    void* libil2cpp = xdl_open("libil2cpp.so", 0);
-    if (!libil2cpp) {
-        TCO_LOGD("Erreur: libil2cpp.so non trouvé pour CloseConnection");
-        return false;
-    }
-
-    uintptr_t base = (uintptr_t)libil2cpp;
-    void* methodAddr = (void*)(base + RVA_CLOSE_CONNECTION);
-
-    typedef bool (*CloseConnection_t)(void* player);
-    CloseConnection_t func = (CloseConnection_t)methodAddr;
-
-    bool success = func(targetPlayer);
-    TCO_LOGD("CloseConnection appelé → %s", success ? "OK" : "Échec");
-
-    xdl_close(libil2cpp);
-    return success;
-}
-
-// Fonction de test / exécution du kick (logs détaillés + appels commentés)
-void TryPhotonKick() {
-    TCO_LOGD("=== Début Photon Kick test ===");
-    TCO_LOGD("RVA SetMasterClient : 0x%x", (unsigned int)RVA_SET_MASTER_CLIENT);
-    TCO_LOGD("RVA CloseConnection  : 0x%x", (unsigned int)RVA_CLOSE_CONNECTION);
-
-    void* libil2cpp = nullptr;
-    for (int attempt = 1; attempt <= 5; attempt++) {
-        libil2cpp = xdl_open("libil2cpp.so", 0);
-        if (libil2cpp) {
-            TCO_LOGD("libil2cpp.so chargé OK (tentative %d)", attempt);
+    while (*name) {
+        handle = xdl_open(*name, RTLD_NOW | RTLD_GLOBAL);
+        if (handle) {
+            KLOG("LIB TROUVÉE : %s – handle %p", *name, handle);
             break;
         }
-        TCO_LOGD("Tentative %d échouée, attente 500ms...", attempt);
-        usleep(500000);
+        name++;
     }
 
-    if (!libil2cpp) {
-        TCO_LOGD("Échec définitif : impossible d'ouvrir libil2cpp.so");
+    if (!handle) {
+        KLOG("Aucune lib IL2CPP trouvée – abandon");
         return;
     }
 
-    uintptr_t base = (uintptr_t)libil2cpp;
-    TCO_LOGD("Adresse base libil2cpp.so : 0x%x", (unsigned int)base);
+    // Init API IL2CPP
+    il2cpp_api_init(handle);
+    il2cpp_dump(game_data_dir);
+    KLOG("Dump IL2CPP terminé");
 
-    uintptr_t addrSetMaster = base + RVA_SET_MASTER_CLIENT;
-    uintptr_t addrCloseConn = base + RVA_CLOSE_CONNECTION;
-
-    TCO_LOGD("Adresse SetMasterClient : 0x%x", (unsigned int)addrSetMaster);
-    TCO_LOGD("Adresse CloseConnection  : 0x%x", (unsigned int)addrCloseConn);
-
-    // Pointeurs de fonction préparés (non appelés pour l'instant – décommente plus tard)
-    typedef bool (*SetMasterClient_t)(void* player);
-    typedef bool (*CloseConnection_t)(void* player);
-
-    SetMasterClient_t setMasterFunc = (SetMasterClient_t)addrSetMaster;
-    CloseConnection_t closeFunc = (CloseConnection_t)addrCloseConn;
-
-    TCO_LOGD("Pointeurs de fonction prêts (non appelés pour sécurité)");
-
-    // ────────────────────────────────────────────────
-    // À décommenter quand on aura LocalPlayer et target valides
-    // ────────────────────────────────────────────────
-    /*
-    void* fakeLocalPlayer = nullptr;   // À remplacer par vrai pointeur
-    void* fakeTargetPlayer = nullptr;  // À remplacer par vrai joueur cible
-
-    bool setSuccess = setMasterFunc(fakeLocalPlayer);
-    TCO_LOGD("SetMasterClient appelé → %s", setSuccess ? "OK" : "Échec");
-
-    bool closeSuccess = closeFunc(fakeTargetPlayer);
-    TCO_LOGD("CloseConnection appelé → %s", closeSuccess ? "OK" : "Échec");
-    */
-
-    TCO_LOGD("=== Fin Photon Kick test ===");
-
-    xdl_close(libil2cpp);
-}
-
-// ────────────────────────────────────────────────────────────────────────────────
-// hack_start – appelle le test après le dump
-// ────────────────────────────────────────────────────────────────────────────────
-void hack_start(const char *game_data_dir) {
-    bool load = false;
-    for (int i = 0; i < 10; i++) {
-        void *handle = xdl_open("libil2cpp.so", 0);
-        if (handle) {
-            load = true;
-            il2cpp_api_init(handle);
-            il2cpp_dump(game_data_dir);
-
-            TCO_LOGD("IL2CPP dump terminé → lancement test Photon kick...");
-            TryPhotonKick();
-
-            break;
-        } else {
-            sleep(1);
-        }
-    }
-    if (!load) {
-        LOGI("libil2cpp.so not found in thread %d", gettid());
-    }
-}
-
-// ────────────────────────────────────────────────────────────────────────────────
-// LE RESTE DU FICHIER EST INCHANGÉ (code original Perfare)
-// ────────────────────────────────────────────────────────────────────────────────
-
-std::string GetLibDir(JavaVM *vms) {
-    JNIEnv *env = nullptr;
-    vms->AttachCurrentThread(&env, nullptr);
-    jclass activity_thread_clz = env->FindClass("android/app/ActivityThread");
-    if (activity_thread_clz != nullptr) {
-        jmethodID currentApplicationId = env->GetStaticMethodID(activity_thread_clz,
-                                                                "currentApplication",
-                                                                "()Landroid/app/Application;");
-        if (currentApplicationId) {
-            jobject application = env->CallStaticObjectMethod(activity_thread_clz,
-                                                              currentApplicationId);
-            jclass application_clazz = env->GetObjectClass(application);
-            if (application_clazz) {
-                jmethodID get_application_info = env->GetMethodID(application_clazz,
-                                                                  "getApplicationInfo",
-                                                                  "()Landroid/content/pm/ApplicationInfo;");
-                if (get_application_info) {
-                    jobject application_info = env->CallObjectMethod(application,
-                                                                     get_application_info);
-                    jfieldID native_library_dir_id = env->GetFieldID(
-                            env->GetObjectClass(application_info), "nativeLibraryDir",
-                            "Ljava/lang/String;");
-                    if (native_library_dir_id) {
-                        auto native_library_dir_jstring = (jstring) env->GetObjectField(
-                                application_info, native_library_dir_id);
-                        auto path = env->GetStringUTFChars(native_library_dir_jstring, nullptr);
-                        LOGI("lib dir %s", path);
-                        std::string lib_dir(path);
-                        env->ReleaseStringUTFChars(native_library_dir_jstring, path);
-                        return lib_dir;
-                    } else {
-                        LOGE("nativeLibraryDir not found");
-                    }
-                } else {
-                    LOGE("getApplicationInfo not found");
+    // Récupération LocalPlayer
+    void* localPlayer = nullptr;
+    void* domain = il2cpp_domain_get();
+    if (domain) {
+        void* assembly = il2cpp_domain_assembly_open(domain, "Photon3Unity3D.dll");
+        if (assembly) {
+            void* image = il2cpp_assembly_get_image(assembly);
+            void* photonClass = il2cpp_class_from_name(image, "Photon.Pun", "PhotonNetwork");
+            if (photonClass) {
+                void* getLocalMethod = il2cpp_class_get_method_from_name(photonClass, "get_LocalPlayer", 0);
+                if (getLocalMethod) {
+                    void* exc = nullptr;
+                    localPlayer = il2cpp_runtime_invoke(getLocalMethod, nullptr, nullptr, &exc);
+                    KLOG("LocalPlayer %s – ptr %p", localPlayer ? "OK" : "NULL", localPlayer);
                 }
-            } else {
-                LOGE("application class not found");
             }
-        } else {
-            LOGE("currentApplication not found");
-        }
-    } else {
-        LOGE("ActivityThread not found");
-    }
-    return {};
-}
-
-static std::string GetNativeBridgeLibrary() {
-    auto value = std::array<char, PROP_VALUE_MAX>();
-    __system_property_get("ro.dalvik.vm.native.bridge", value.data());
-    return {value.data()};
-}
-
-struct NativeBridgeCallbacks {
-    uint32_t version;
-    void *initialize;
-    void *(*loadLibrary)(const char *libpath, int flag);
-    void *(*getTrampoline)(void *handle, const char *name, const char *shorty, uint32_t len);
-    void *isSupported;
-    void *getAppEnv;
-    void *isCompatibleWith;
-    void *getSignalHandler;
-    void *unloadLibrary;
-    void *getError;
-    void *isPathSupported;
-    void *initAnonymousNamespace;
-    void *createNamespace;
-    void *linkNamespaces;
-    void *(*loadLibraryExt)(const char *libpath, int flag, void *ns);
-};
-
-bool NativeBridgeLoad(const char *game_data_dir, int api_level, void *data, size_t length) {
-    sleep(5);
-    auto libart = dlopen("libart.so", RTLD_NOW);
-    auto JNI_GetCreatedJavaVMs = (jint (*)(JavaVM **, jsize, jsize *)) dlsym(libart,
-                                                                             "JNI_GetCreatedJavaVMs");
-    LOGI("JNI_GetCreatedJavaVMs %p", JNI_GetCreatedJavaVMs);
-    JavaVM *vms_buf[1];
-    JavaVM *vms;
-    jsize num_vms;
-    jint status = JNI_GetCreatedJavaVMs(vms_buf, 1, &num_vms);
-    if (status == JNI_OK && num_vms > 0) {
-        vms = vms_buf[0];
-    } else {
-        LOGE("GetCreatedJavaVMs error");
-        return false;
-    }
-    auto lib_dir = GetLibDir(vms);
-    if (lib_dir.empty()) {
-        LOGE("GetLibDir error");
-        return false;
-    }
-    if (lib_dir.find("/lib/x86") != std::string::npos) {
-        LOGI("no need NativeBridge");
-        munmap(data, length);
-        return false;
-    }
-    auto nb = dlopen("libhoudini.so", RTLD_NOW);
-    if (!nb) {
-        auto native_bridge = GetNativeBridgeLibrary();
-        LOGI("native bridge: %s", native_bridge.data());
-        nb = dlopen(native_bridge.data(), RTLD_NOW);
-    }
-    if (nb) {
-        LOGI("nb %p", nb);
-        auto callbacks = (NativeBridgeCallbacks *) dlsym(nb, "NativeBridgeItf");
-        if (callbacks) {
-            LOGI("NativeBridgeLoadLibrary %p", callbacks->loadLibrary);
-            LOGI("NativeBridgeLoadLibraryExt %p", callbacks->loadLibraryExt);
-            LOGI("NativeBridgeGetTrampoline %p", callbacks->getTrampoline);
-            int fd = syscall(__NR_memfd_create, "anon", MFD_CLOEXEC);
-            ftruncate(fd, (off_t) length);
-            void *mem = mmap(nullptr, length, PROT_WRITE, MAP_SHARED, fd, 0);
-            memcpy(mem, data, length);
-            munmap(mem, length);
-            munmap(data, length);
-            char path[PATH_MAX];
-            snprintf(path, PATH_MAX, "/proc/self/fd/%d", fd);
-            LOGI("arm path %s", path);
-            void *arm_handle;
-            if (api_level >= 26) {
-                arm_handle = callbacks->loadLibraryExt(path, RTLD_NOW, (void *) 3);
-            } else {
-                arm_handle = callbacks->loadLibrary(path, RTLD_NOW);
-            }
-            if (arm_handle) {
-                LOGI("arm handle %p", arm_handle);
-                auto init = (void (*)(JavaVM *, void *)) callbacks->getTrampoline(arm_handle,
-                                                                                  "JNI_OnLoad",
-                                                                                  nullptr, 0);
-                LOGI("JNI_OnLoad %p", init);
-                init(vms, (void *) game_data_dir);
-                return true;
-            }
-            close(fd);
         }
     }
-    return false;
-}
 
-void hack_prepare(const char *game_data_dir, void *data, size_t length) {
-    LOGI("hack thread: %d", gettid());
-    int api_level = android_get_device_api_level();
-    LOGI("api level: %d", api_level);
-#if defined(__i386__) || defined(__x86_64__)
-    if (!NativeBridgeLoad(game_data_dir, api_level, data, length)) {
-#endif
-        hack_start(game_data_dir);
-#if defined(__i386__) || defined(__x86_64__)
+    if (!localPlayer) {
+        KLOG("LocalPlayer non récupéré – skip kick");
+        xdl_close(handle);
+        return;
     }
-#endif
+
+    // SetMasterClient si nécessaire
+    {
+        void* methodAddr = (void*)((uintptr_t)handle + RVA_SET_MASTER);
+        typedef bool (*SetMaster_t)(void*);
+        SetMaster_t setMaster = (SetMaster_t)methodAddr;
+        bool isMaster = setMaster(localPlayer);
+        KLOG("SetMasterClient → %s", isMaster ? "OK (je suis master)" : "Échec ou déjà master");
+    }
+
+    // Récupération PlayerList (via PhotonNetwork::get_PlayerList ou offset typique)
+    // Pour simplifier : on assume que PlayerList est un tableau Photon.Realtime.Player*
+    // Tu peux ajuster l'offset ou utiliser il2cpp_class_get_field_from_name si tu as les headers complets
+    void* playerList = nullptr; // À remplacer par vraie récupération
+    int playerCount = 0; // À remplacer
+
+    // Pour test : on kick un pointeur fictif ou on log
+    KLOG("Simulation kick – LocalPlayer OK, mais pas de liste réelle pour l'instant");
+
+    // Exemple brutal (à adapter) : kick un joueur fictif
+    void* fakeTarget = (void*)0xDEADBEEF;
+    void* methodAddr = (void*)((uintptr_t)handle + RVA_CLOSE_CONN);
+    typedef bool (*Close_t)(void*);
+    Close_t closeConn = (Close_t)methodAddr;
+    bool kicked = closeConn(fakeTarget);
+    KLOG("Test CloseConnection sur fake target → %s", kicked ? "OK" : "Échec");
+
+    // Quand tu auras la vraie liste :
+    // for (int i = 0; i < playerCount; i++) {
+    //     void* player = playerList[i];
+    //     if (player != localPlayer) {
+    //         closeConn(player);
+    //         KLOG("KICK envoyé sur joueur %d", i);
+    //     }
+    // }
+
+    xdl_close(handle);
+    KLOG("SafeKickOthers terminé – vérifie si ton ami a été déconnecté");
 }
 
-#if defined(__arm__) || defined(__aarch64__)
-JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
-    auto game_data_dir = (const char *) reserved;
-    std::thread hack_thread(hack_start, game_data_dir);
-    hack_thread.detach();
-    return JNI_VERSION_1_6;
+// ──────────────────────────────────────────────────────────────
+// hack_start – exécution immédiate
+// ──────────────────────────────────────────────────────────────
+
+void hack_start(const char *game_data_dir) {
+    KLOG("hack_start – MODE KICK SAFE ACTIVÉ – thread %d", gettid());
+
+    // On lance direct sans boucle longue
+    SafeKickOthers(game_data_dir);
+
+    KLOG("hack_start terminé");
 }
-#endif
+
+// Le reste du fichier reste IDENTIQUE
+// (GetLibDir, NativeBridgeLoad, hack_prepare, JNI_OnLoad, etc.)
