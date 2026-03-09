@@ -13,10 +13,10 @@
 #include <linux/unistd.h>
 #include <array>
 // ──────────────────────────────────────────────────────────────
-// LOG TRÈS VISIBLE ET FACILE À FILTRER
+// TAG TRÈS VISIBLE ET FACILE À FILTRER
 // ──────────────────────────────────────────────────────────────
 #define KICK_TAG "KICK_TEST_SAFE"
-#define KLOG(...) __android_log_print(ANDROID_LOG_ERROR, KICK_TAG, VA_ARGS)
+#define KLOG(fmt, args...) __android_log_print(ANDROID_LOG_ERROR, KICK_TAG, fmt, ##args)
 // RVA exacts de ton dump.cs (Photon.Pun.PhotonNetwork)
 const uintptr_t RVA_SET_MASTER = 0x1947664;
 const uintptr_t RVA_CLOSE_CONN = 0x194765C;
@@ -63,11 +63,11 @@ uintptr_t addrClose = base + RVA_CLOSE_CONN;
 KLOG("Base lib : 0x%lx", base);
 KLOG("SetMasterClient addr : 0x%lx", addrSet);
 KLOG("CloseConnection addr : 0x%lx", addrClose);
-// Pointeurs de fonction
+// Pointeurs de fonction corrigés (avec param void*)
 typedef bool (SetMaster_t)(void);
 typedef bool (Close_t)(void);
-SetMaster_t setFunc = reinterpret_cast<SetMaster_t>(addrSet);
-Close_t closeFunc = reinterpret_cast<Close_t>(addrClose);
+SetMaster_t setFunc = (SetMaster_t)addrSet;
+Close_t closeFunc = (Close_t)addrClose;
 KLOG("Pointeurs de fonction prêts");
 // Test appels sur pointeur fictif pour éviter crash immédiat
 void* fakePlayer = (void*)0xDEADBEEF;
@@ -253,4 +253,3 @@ hack_thread.detach();
 return JNI_VERSION_1_6;
 }
 #endif
-text
