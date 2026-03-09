@@ -16,22 +16,24 @@
 #include <linux/unistd.h>
 #include <array>
 
-// --- Ajout pour Photon kick TCO (corrigé pour compilation armeabi-v7a) ---
+// ────────────────────────────────────────────────────────────────────────────────
+// PARTIE PHOTON KICK TCO (corrigée pour armeabi-v7a 32 bits)
+// ────────────────────────────────────────────────────────────────────────────────
 
 // On évite de redéfinir LOG_TAG (conflit avec log.h)
-// Utilisation d'un tag dédié et appel direct à __android_log_print
+// On utilise un tag dédié + appel direct à __android_log_print
 #define TCO_LOG_TAG "TCO_KICK"
 #define TCO_LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, TCO_LOG_TAG, __VA_ARGS__)
 
-// RVA exacts de ton dump.cs (Photon.Pun.PhotonNetwork)
+// RVA exacts issus de ton dump.cs
 const uintptr_t RVA_SET_MASTER_CLIENT = 0x1947664;   // SetMasterClient(PhotonPlayer masterClientPlayer)
 const uintptr_t RVA_CLOSE_CONNECTION   = 0x194765C;   // CloseConnection(PhotonPlayer kickPlayer)
 
-// Fonction pour appeler SetMasterClient (devient master)
+// Fonction pour tenter de devenir Master
 bool SetMasterClient(void* localPlayer) {
     void* libil2cpp = xdl_open("libil2cpp.so", 0);
     if (!libil2cpp) {
-        TCO_LOGD("Erreur: libil2cpp.so non trouvé pour hook");
+        TCO_LOGD("Erreur: libil2cpp.so non trouvé pour SetMasterClient");
         return false;
     }
 
@@ -39,20 +41,20 @@ bool SetMasterClient(void* localPlayer) {
     void* methodAddr = (void*)(base + RVA_SET_MASTER_CLIENT);
 
     typedef bool (*SetMasterClient_t)(void* player);
-    SetMasterClient_t SetMasterClientFunc = (SetMasterClient_t)methodAddr;
+    SetMasterClient_t func = (SetMasterClient_t)methodAddr;
 
-    bool success = SetMasterClientFunc(localPlayer);
-    TCO_LOGD("SetMasterClient appelé : %s", success ? "OK" : "Échec");
+    bool success = func(localPlayer);
+    TCO_LOGD("SetMasterClient appelé → %s", success ? "OK" : "Échec");
 
     xdl_close(libil2cpp);
     return success;
 }
 
-// Fonction pour kicker (CloseConnection)
+// Fonction pour kicker un joueur
 bool CloseConnection(void* targetPlayer) {
     void* libil2cpp = xdl_open("libil2cpp.so", 0);
     if (!libil2cpp) {
-        TCO_LOGD("Erreur dlopen dans CloseConnection");
+        TCO_LOGD("Erreur: libil2cpp.so non trouvé pour CloseConnection");
         return false;
     }
 
@@ -60,38 +62,91 @@ bool CloseConnection(void* targetPlayer) {
     void* methodAddr = (void*)(base + RVA_CLOSE_CONNECTION);
 
     typedef bool (*CloseConnection_t)(void* player);
-    CloseConnection_t CloseConnectionFunc = (CloseConnection_t)methodAddr;
+    CloseConnection_t func = (CloseConnection_t)methodAddr;
 
-    bool success = CloseConnectionFunc(targetPlayer);
-    TCO_LOGD("CloseConnection appelé sur target : %s", success ? "OK" : "Échec");
+    bool success = func(targetPlayer);
+    TCO_LOGD("CloseConnection appelé → %s", success ? "OK" : "Échec");
 
     xdl_close(libil2cpp);
     return success;
 }
 
-// Fonction principale pour tester le kick (appelle après dump)
+// Fonction de test / exécution du kick
 void TryPhotonKick() {
-    TCO_LOGD("Photon Kick test lancé ! RVA SetMaster: 0x%x, Close: 0x%x",
+    TCO_LOGD("Photon Kick test démarré ! RVA SetMaster: 0x%x, Close: 0x%x",
              (unsigned int)RVA_SET_MASTER_CLIENT,
              (unsigned int)RVA_CLOSE_CONNECTION);
 
-    // Test dlopen (pour vérifier libil2cpp)
     void *libil2cpp = xdl_open("libil2cpp.so", 0);
-    if (libil2cpp) {
-        TCO_LOGD("libil2cpp chargé OK dans TryPhotonKick");
-        xdl_close(libil2cpp);
-    } else {
+    if (!libil2cpp) {
         TCO_LOGD("Erreur dlopen libil2cpp dans TryPhotonKick");
+        return;
     }
 
-    // TODO futur : 
-    // void* localPlayer = ... (via il2cpp_class_get_method_from_name + invoke "get_LocalPlayer")
-    // SetMasterClient(localPlayer);
-    // void* target = ... (via scan ou hook players list)
-    // CloseConnection(target);
+    // Récupération du domaine IL2CPP
+    void* domain = il2cpp_domain_get();
+    if (!domain) {
+        TCO_LOGD("Erreur: il2cpp_domain_get retourné NULL");
+        xdl_close(libil2cpp);
+        return;
+    }
+
+    // Ouverture de l'assembly Photon3Unity3D.dll
+    Il2CppAssembly* assembly = il2cpp_domain_assembly_open(domain, "Photon3Unity3D.dll");
+    if (!assembly) {
+        TCO_LOGD("Erreur: assembly Photon3Unity3D introuvable");
+        xdl_close(libil2cpp);
+        return;
+    }
+
+    Il2CppImage* image = il2cpp_assembly_get_image(assembly);
+    if (!image) {
+        TCO_LOGD("Erreur: image Photon3Unity3D introuvable");
+        xdl_close(libil2cpp);
+        return;
+    }
+
+    // Classe PhotonNetwork
+    Il2CppClass* photonNetworkClass = il2cpp_class_from_name(image, "Photon.Pun", "PhotonNetwork");
+    if (!photonNetworkClass) {
+        TCO_LOGD("Erreur: classe Photon.Pun.PhotonNetwork introuvable");
+        xdl_close(libil2cpp);
+        return;
+    }
+
+    // Récupération de LocalPlayer via get_LocalPlayer()
+    Il2CppMethod* getLocalPlayerMethod = il2cpp_class_get_method_from_name(photonNetworkClass, "get_LocalPlayer", 0);
+    if (!getLocalPlayerMethod) {
+        TCO_LOGD("Erreur: méthode get_LocalPlayer introuvable");
+        xdl_close(libil2cpp);
+        return;
+    }
+
+    Il2CppException* exc = nullptr;
+    void* localPlayer = il2cpp_runtime_invoke(getLocalPlayerMethod, nullptr, nullptr, &exc);
+    if (exc || !localPlayer) {
+        TCO_LOGD("Erreur appel get_LocalPlayer (exc: %p)", exc);
+        xdl_close(libil2cpp);
+        return;
+    }
+
+    TCO_LOGD("LocalPlayer récupéré avec succès: %p", localPlayer);
+
+    // On tente de devenir Master
+    bool becameMaster = SetMasterClient(localPlayer);
+    TCO_LOGD("Devenu Master ? %s", becameMaster ? "OUI" : "NON");
+
+    // Pour le kick : simulation simple (pas de cible réelle pour l'instant)
+    // Dans la prochaine version on ajoutera la recherche par UserId
+    TCO_LOGD("Simulation kick terminée (pas de cible réelle pour ce test)");
+
+    xdl_close(libil2cpp);
 }
 
-// Fonction hack_start originale + notre ajout
+// ────────────────────────────────────────────────────────────────────────────────
+// FONCTION ORIGINALE hack_start (modifiée pour appeler le kick)
+// ────────────────────────────────────────────────────────────────────────────────
+
 void hack_start(const char *game_data_dir) {
     bool load = false;
     for (int i = 0; i < 10; i++) {
@@ -101,7 +156,7 @@ void hack_start(const char *game_data_dir) {
             il2cpp_api_init(handle);
             il2cpp_dump(game_data_dir);
 
-            // --- AJOUT ICI : après dump, on lance le test Photon ---
+            // ── AJOUT ICI : après dump réussi ──
             TCO_LOGD("IL2CPP dump terminé, lancement Photon kick test...");
             TryPhotonKick();
 
@@ -115,7 +170,10 @@ void hack_start(const char *game_data_dir) {
     }
 }
 
-// Le reste du fichier reste IDENTIQUE
+// ────────────────────────────────────────────────────────────────────────────────
+// LE RESTE DU FICHIER RESTE INCHANGÉ (code original)
+// ────────────────────────────────────────────────────────────────────────────────
+
 std::string GetLibDir(JavaVM *vms) {
     JNIEnv *env = nullptr;
     vms->AttachCurrentThread(&env, nullptr);
@@ -189,7 +247,6 @@ struct NativeBridgeCallbacks {
 };
 
 bool NativeBridgeLoad(const char *game_data_dir, int api_level, void *data, size_t length) {
-    //TODO 等待houdini初始化
     sleep(5);
     auto libart = dlopen("libart.so", RTLD_NOW);
     auto JNI_GetCreatedJavaVMs = (jint (*)(JavaVM **, jsize, jsize *)) dlsym(libart,
