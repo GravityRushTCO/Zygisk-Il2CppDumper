@@ -46,7 +46,7 @@ private:
     size_t length;
 
     void preSpecialize(const char *package_name, const char *app_data_dir) {
-        if (strcmp(package_name, GamePackageName) == 0) {
+        if (strcmp(package_name, "com.Chillgaming.oneState") == 0) {
             LOGI("detect game: %s", package_name);
             enable_hack = true;
             game_data_dir = new char[strlen(app_data_dir) + 1];
