@@ -7,32 +7,44 @@ on:
         description: "Package name of the game:"
         required: true
 
+env:
+  # Force l'utilisation de Node.js 24 pour anticiper la suppression de Node 20
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      # Mise à jour v3 -> v4 (Node.js 20+ compatible)
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v3
+      # Mise à jour v3 -> v4 + Passage à Java 17 (recommandé pour Gradle 7.5+)
+      - name: Set up JDK
+        uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: 11
-          cache: gradle
+          distribution: 'temurin'
+          java-version: '17' 
+          cache: 'gradle'
 
+      # Correction du cache NDK (Changement de la clé pour corriger l'erreur tar)
       - name: Cache NDK
         uses: actions/cache@v4
         with:
-          path: |
-            /usr/local/lib/android/sdk/ndk/
-          key: ${{ runner.os }}-ndk-${{ hashFiles('module/build.gradle') }}
-          restore-keys: ${{ runner.os }}-ndk-
+          path: /usr/local/lib/android/sdk/ndk/
+          # On ajoute "v2" à la clé pour ignorer l'ancien cache corrompu
+          key: ${{ runner.os }}-ndk-v2-${{ hashFiles('module/build.gradle') }}
+          restore-keys: |
+            ${{ runner.os }}-ndk-v2-
 
-      - run: |
+      - name: Build Module
+        run: |
           chmod +x ./gradlew
+          # Injection du package name dans la description et le code source
           sed -i 's/moduleDescription = "/moduleDescription = "(${{ github.event.inputs.package_name }}) /g' module.gradle
           sed -i "s/com.game.packagename/${{ github.event.inputs.package_name }}/g" module/src/main/cpp/game.h
           ./gradlew :module:assembleRelease
 
+      # Mise à jour vers v4
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v4
         with:
