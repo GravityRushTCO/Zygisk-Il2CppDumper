@@ -14,12 +14,13 @@
 #include <array>
 #include <string>
 #include <android/log.h>
+#include <inttypes.h> // REQUIS pour PRIxPTR
+#include <stdint.h>    // REQUIS pour uintptr_t
 
 // ──────────────────────────────────────────────────────────────
 // LOG TRÈS VISIBLE ET FACILE À FILTRER
 // ──────────────────────────────────────────────────────────────
 #define KICK_TAG "KICK_TEST_SAFE"
-// CORRECTION 1 : Utilisation de __VA_ARGS__ avec les underscores
 #define KLOG(...) __android_log_print(ANDROID_LOG_ERROR, KICK_TAG, __VA_ARGS__)
 
 // RVA exacts de ton dump.cs (Photon.Pun.PhotonNetwork)
@@ -38,7 +39,7 @@ static const char* lib_names[] = {
     NULL
 };
 
-// CORRECTION 2 : Signatures de types acceptant un argument (pour éviter "too many arguments")
+// Signatures de types acceptant un argument
 typedef bool (*SetMaster_t)(void* player);
 typedef bool (*Close_t)(void* player);
 
@@ -76,11 +77,12 @@ void SafeKickTest(const char* game_data_dir) {
     uintptr_t addrSet = base + RVA_SET_MASTER;
     uintptr_t addrClose = base + RVA_CLOSE_CONN;
 
-    KLOG("Base lib : 0x%lx", base);
-    KLOG("SetMasterClient addr : 0x%lx", addrSet);
-    KLOG("CloseConnection addr : 0x%lx", addrClose);
+    // CORRECTION : Utilisation de PRIxPTR pour la compatibilité 32/64 bits
+    KLOG("Base lib : 0x%" PRIxPTR, base);
+    KLOG("SetMasterClient addr : 0x%" PRIxPTR, addrSet);
+    KLOG("CloseConnection addr : 0x%" PRIxPTR, addrClose);
 
-    // CORRECTION 3 : Utilisation de reinterpret_cast pour le C++
+    // Utilisation de reinterpret_cast pour le C++
     SetMaster_t setFunc = reinterpret_cast<SetMaster_t>(addrSet);
     Close_t closeFunc = reinterpret_cast<Close_t>(addrClose);
 
