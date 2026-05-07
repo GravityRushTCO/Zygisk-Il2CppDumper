@@ -5,6 +5,6 @@
 #ifndef ZYGISK_IL2CPPDUMPER_GAME_H
 #define ZYGISK_IL2CPPDUMPER_GAME_H
 
-#define GamePackageName "com.twoheadedshark.tco"
+#define GamePackageName "com.Chillgaming.oneState"
 
 #endif //ZYGISK_IL2CPPDUMPER_GAME_H
